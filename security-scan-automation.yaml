@@ -111,35 +111,143 @@ action:
           - update_issue: update issue descriptions
           - create_comment: document changes made
 
+    - agent:
+        prompt: |
+          You are a security engineer checking this repository against known CVE advisories.
+
+          CONTEXT:
+          - The CVE news feed automation creates "[Advisory]" issues in Linear team SAF
+          - These advisories describe vulnerabilities that MAY affect repositories
+          - Your job is to check if THIS repository ({{repository_name}} at {{repository_url}}) is affected
+          - You must leave a comment on each advisory to record that this repo was scanned
+          - Comment marker format: "Scanned: {{repository_name}}" - this prevents duplicate scans
+
+          TASK:
+
+          1. Fetch all advisory issues from Linear:
+             - Use list_issues with team: "SAF"
+             - These issues have titles starting with "[Advisory]"
+
+          2. For each advisory issue:
+             a. Read the issue's comments to check if this repo was already scanned
+                - Look for a comment containing "Scanned: {{repository_name}}"
+                - If found, SKIP this advisory (already processed)
+
+             b. If not yet scanned, analyze the advisory description to extract:
+                - CVE ID
+                - Affected package names and ecosystems
+                - Vulnerable version ranges
+                - Detection guidance (what to search for)
+
+             c. Check if this repository is affected:
+                - Search for the affected package in dependency files:
+                  - Go: go.mod, go.sum
+                  - JavaScript/TypeScript: package.json, package-lock.json, yarn.lock
+                  - Java/Kotlin: pom.xml, build.gradle, build.gradle.kts
+                - Check if the installed version falls within the vulnerable range
+                - Search for direct imports/usage of the affected package
+
+             d. Leave a comment on the advisory issue using create_comment:
+                - If NOT affected:
+                  ```
+                  Scanned: {{repository_name}}
+                  Status: NOT AFFECTED
+                  Reason: [Package not found / Version not vulnerable / Not applicable]
+                  ```
+                - If AFFECTED:
+                  ```
+                  Scanned: {{repository_name}}
+                  Status: AFFECTED
+                  Finding: [Brief description of how it's affected]
+                  Issue: [Link to the finding issue created below]
+                  ```
+
+             e. If AFFECTED, create a finding issue:
+                - Use create_issue with team: "SAF"
+                - Title: "[Finding] CVE-XXXX-XXXXX - {{repository_name}}"
+                - Labels: ["Security-Finding", "From-Advisory"]
+                - Description format:
+                  ```
+                  ## Finding Details
+                  - **Repository:** {{repository_url}}
+                  - **CVE:** CVE-XXXX-XXXXX
+                  - **Source Advisory:** [Link to the advisory issue]
+                  - **Severity:** [from advisory]
+
+                  ## Affected Dependency
+                  - **Package:** package-name
+                  - **Installed Version:** X.Y.Z
+                  - **Vulnerable Range:** < X.Y.Z
+                  - **Fixed Version:** X.Y.Z
+
+                  ## Locations
+                  - path/to/dependency-file:line
+
+                  ## Remediation
+                  Upgrade to version X.Y.Z or later.
+
+                  ---
+                  Detected: YYYY-MM-DD
+                  ```
+
+          IMPORTANT:
+          - Always leave a comment on the advisory, even if not affected
+          - The comment MUST contain "Scanned: {{repository_name}}" for deduplication
+          - Link finding issues back to their source advisory
+          - Use labels to distinguish findings from advisories
+
+          LINEAR TOOLS:
+          - list_issues: fetch advisories (team: "SAF", label: "CVE-Advisory")
+          - create_issue: create finding issues (team: "SAF", labels: ["Security-Finding", "From-Advisory"])
+          - create_comment: record scan results on advisory issues
+
     - report:
         outputs:
           - key: high_count
-            title: High Severity Count
+            title: High Severity Count (Scanner)
             string: {}
             prompt: |
-              Count the number of HIGH severity vulnerabilities found in the scan results.
+              Count the number of HIGH severity vulnerabilities found by Trivy/OSV scanners.
               Return ONLY the integer count, nothing else.
           - key: critical_count
-            title: Critical Severity Count
+            title: Critical Severity Count (Scanner)
             string: {}
             prompt: |
-              Count the number of CRITICAL severity vulnerabilities found in the scan results.
+              Count the number of CRITICAL severity vulnerabilities found by Trivy/OSV scanners.
               Return ONLY the integer count, nothing else.
-          - key: issues_created
-            title: Linear Issues Created
+          - key: scanner_issues_created
+            title: Scanner Issues Created
             string: {}
             prompt: |
-              Count how many new Linear issues were created during this execution.
+              Count how many new Linear issues were created from scanner findings.
               Return ONLY the integer count, nothing else.
-          - key: issues_updated
-            title: Linear Issues Updated
+          - key: scanner_issues_updated
+            title: Scanner Issues Updated
             string: {}
             prompt: |
-              Count how many existing Linear issues were updated during this execution.
+              Count how many existing Linear issues were updated from scanner findings.
+              Return ONLY the integer count, nothing else.
+          - key: advisories_checked
+            title: Advisories Checked
+            string: {}
+            prompt: |
+              Count how many CVE advisory issues were checked against this repository.
+              Return ONLY the integer count, nothing else.
+          - key: advisories_affected
+            title: Advisories Affecting This Repo
+            string: {}
+            prompt: |
+              Count how many CVE advisories were found to affect this repository.
+              Return ONLY the integer count, nothing else.
+          - key: advisory_issues_created
+            title: Finding Issues Created (from Advisories)
+            string: {}
+            prompt: |
+              Count how many new finding issues were created from advisory matches.
               Return ONLY the integer count, nothing else.
           - key: cve_list
-            title: CVE IDs Found
+            title: All CVE IDs Found
             string: {}
             prompt: |
-              List all CVE IDs found in the scan results.
+              List all CVE IDs found (from both scanners and advisory matches).
               Return ONLY a comma-separated list of CVE IDs, or "none" if no CVEs found.
