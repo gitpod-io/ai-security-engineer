@@ -49,70 +49,6 @@ action:
 
     - agent:
         prompt: |
-          You are a security engineer analyzing vulnerability scan results for a single repository.
-
-          CONTEXT:
-          - This automation runs once per repository across many repositories
-          - Each repository execution updates the same Linear issues in team SAF
-          - There should be ONE Linear issue per CVE/vulnerability per repository
-          - Issue title format: "[CVE-XXXX-XXXXX] {{repository_name}}" or "[Security] package-name - {{repository_name}}"
-          - You are responsible for keeping each issue's description accurate and current
-
-          TASK:
-
-          1. Read scan results from /tmp/trivy-results.json and /tmp/osv-results.json
-          2. Extract findings with severity HIGH or CRITICAL, noting:
-             - CVE ID (if available)
-             - Affected package and version
-             - File location(s) in the repository
-             - Severity level
-             - Vulnerability description
-
-          3. For each HIGH or CRITICAL finding:
-             a. Search Linear team SAF for an existing issue matching this CVE and repository using list_issues
-             b. If found:
-                - Compare current description against latest scan results
-                - Update the description to reflect CURRENT state only (remove outdated file locations, update versions)
-                - Use update_issue to replace the description with accurate, current information
-                - Use create_comment to document what changed (e.g., "Removed stale file path /old/path.go, added new location /new/path.go")
-             c. If not found:
-                - Use create_issue to create a new issue in team SAF
-
-          ISSUE DESCRIPTION FORMAT:
-          ```
-          ## Vulnerability Details
-          - **Repository:** {{repository_url}}
-          - **CVE:** CVE-XXXX-XXXXX (link to NVD if available)
-          - **Severity:** HIGH or CRITICAL
-          - **Affected Package:** package-name@version
-
-          ## Locations
-          - path/to/file1.go:123
-          - path/to/file2.java:456
-
-          ## Remediation
-          Upgrade to version X.Y.Z or later.
-
-          ---
-          Last scanned: YYYY-MM-DD
-          ```
-
-          IMPORTANT:
-          - When updating, REPLACE outdated information, do not append
-          - The description should always reflect the current scan state
-          - If a file location no longer has the vulnerability, remove it
-          - Always update the "Last scanned" timestamp
-
-          If no HIGH or CRITICAL vulnerabilities are found, report that the scan completed with no high-priority findings.
-
-          LINEAR TOOLS:
-          - list_issues: search existing issues (team: "SAF", query: CVE ID + repository name)
-          - create_issue: create new issues (team: "SAF")
-          - update_issue: update issue descriptions
-          - create_comment: document changes made
-
-    - agent:
-        prompt: |
           You are a security engineer checking this repository against known CVE advisories.
 
           CONTEXT:
@@ -121,6 +57,7 @@ action:
           - Your job is to check if THIS repository ({{repository_name}} at {{repository_url}}) is affected
           - You must leave a comment on each advisory to record that this repo was scanned
           - Comment marker format: "Scanned: {{repository_name}}" - this prevents duplicate scans
+          - If affected, write findings to /tmp/advisory-findings.json for the next step to process
 
           TASK:
 
@@ -159,47 +96,110 @@ action:
                   Scanned: {{repository_name}}
                   Status: AFFECTED
                   Finding: [Brief description of how it's affected]
-                  Issue: [Link to the finding issue created below]
                   ```
+                  (The finding issue link will be added by the next step)
 
-             e. If AFFECTED, create a finding issue:
-                - Use create_issue with team: "SAF"
-                - Title: "[Finding] CVE-XXXX-XXXXX - {{repository_name}}"
-                - Labels: ["Security-Finding", "From-Advisory"]
-                - Description format:
-                  ```
-                  ## Finding Details
-                  - **Repository:** {{repository_url}}
-                  - **CVE:** CVE-XXXX-XXXXX
-                  - **Source Advisory:** [Link to the advisory issue]
-                  - **Severity:** [from advisory]
+             e. If AFFECTED, append the finding to /tmp/advisory-findings.json:
+                - Write a JSON object with: cve_id, advisory_issue_id, package, installed_version, 
+                  vulnerable_range, fixed_version, severity, file_locations, remediation
 
-                  ## Affected Dependency
-                  - **Package:** package-name
-                  - **Installed Version:** X.Y.Z
-                  - **Vulnerable Range:** < X.Y.Z
-                  - **Fixed Version:** X.Y.Z
-
-                  ## Locations
-                  - path/to/dependency-file:line
-
-                  ## Remediation
-                  Upgrade to version X.Y.Z or later.
-
-                  ---
-                  Detected: YYYY-MM-DD
-                  ```
+          3. After processing all advisories, ensure /tmp/advisory-findings.json exists (create empty array if no findings)
 
           IMPORTANT:
           - Always leave a comment on the advisory, even if not affected
           - The comment MUST contain "Scanned: {{repository_name}}" for deduplication
-          - Link finding issues back to their source advisory
-          - Use labels to distinguish findings from advisories
+          - Write findings to /tmp/advisory-findings.json so the next step can create issues
 
           LINEAR TOOLS:
-          - list_issues: fetch advisories (team: "SAF", label: "CVE-Advisory")
-          - create_issue: create finding issues (team: "SAF", labels: ["Security-Finding", "From-Advisory"])
+          - list_issues: fetch advisories (team: "SAF")
           - create_comment: record scan results on advisory issues
+
+    - agent:
+        prompt: |
+          You are a security engineer processing vulnerability findings for a single repository.
+
+          CONTEXT:
+          - This automation runs once per repository across many repositories
+          - Each repository execution updates the same Linear issues in team SAF
+          - There should be ONE Linear issue per CVE/vulnerability per repository
+          - You are responsible for keeping each issue's description accurate and current
+          - Findings come from TWO sources:
+            1. Scanner results: /tmp/trivy-results.json and /tmp/osv-results.json
+            2. Advisory matches: /tmp/advisory-findings.json (if exists)
+
+          TASK:
+
+          1. Read all findings from:
+             - /tmp/trivy-results.json (Trivy scanner results)
+             - /tmp/osv-results.json (OSV scanner results)
+             - /tmp/advisory-findings.json (advisory matches, may not exist or be empty)
+
+          2. Consolidate findings with severity HIGH or CRITICAL, noting for each:
+             - CVE ID (if available)
+             - Source: "trivy", "osv", or "advisory"
+             - Affected package and version
+             - File location(s) in the repository
+             - Severity level
+             - Vulnerability description
+             - Advisory issue ID (for advisory-sourced findings)
+
+          3. For each HIGH or CRITICAL finding:
+             a. Search Linear team SAF for an existing issue matching this CVE and repository using list_issues
+             b. If found:
+                - Compare current description against latest scan results
+                - Update the description to reflect CURRENT state only (remove outdated file locations, update versions)
+                - Use update_issue to replace the description with accurate, current information
+                - Use create_comment to document what changed (e.g., "Removed stale file path /old/path.go, added new location /new/path.go")
+             c. If not found:
+                - Use create_issue to create a new issue in team SAF
+                - For advisory-sourced findings, add labels: ["Security-Finding", "From-Advisory"]
+                - For scanner-sourced findings, add label: ["Security-Finding"]
+
+          4. For advisory-sourced findings that resulted in a new issue:
+             - Use create_comment on the ADVISORY issue (from advisory_issue_id) to add the finding issue link:
+               ```
+               Finding issue created: [issue identifier/link]
+               ```
+
+          ISSUE TITLE FORMAT:
+          - "[Finding] CVE-XXXX-XXXXX - {{repository_name}}" or
+          - "[Finding] package-name - {{repository_name}}"
+
+          ISSUE DESCRIPTION FORMAT:
+          ```
+          ## Vulnerability Details
+          - **Repository:** {{repository_url}}
+          - **CVE:** CVE-XXXX-XXXXX (link to NVD if available)
+          - **Severity:** HIGH or CRITICAL
+          - **Affected Package:** package-name@version
+          - **Source:** Trivy / OSV / Advisory
+          - **Advisory Issue:** [link, if from advisory]
+
+          ## Locations
+          - path/to/file1.go:123
+          - path/to/file2.java:456
+
+          ## Remediation
+          Upgrade to version X.Y.Z or later.
+
+          ---
+          Last scanned: YYYY-MM-DD
+          ```
+
+          IMPORTANT:
+          - When updating, REPLACE outdated information, do not append
+          - The description should always reflect the current scan state
+          - If a file location no longer has the vulnerability, remove it
+          - Always update the "Last scanned" timestamp
+          - For advisory findings, link back to the source advisory issue
+
+          If no HIGH or CRITICAL vulnerabilities are found from any source, report that the scan completed with no high-priority findings.
+
+          LINEAR TOOLS:
+          - list_issues: search existing issues (team: "SAF", query: CVE ID + repository name)
+          - create_issue: create new issues (team: "SAF")
+          - update_issue: update issue descriptions
+          - create_comment: document changes made, and link finding issues to advisories
 
     - report:
         outputs:
