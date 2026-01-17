@@ -1,0 +1,145 @@
+name: security-vulnerability-scan
+description: Runs security scanners (Trivy, OSV-Scanner) to find CVEs in Go, Java/Kotlin, and JS/TS codebases, then creates or updates Linear issues for high-priority findings in team SAF
+
+triggers:
+  - manual: {}
+    context:
+      projects: {}
+
+action:
+  limits:
+    maxParallel: 5
+    maxTotal: 50
+  steps:
+    - task:
+        command: |
+          set -e
+
+          # Install security scanners to user-writable location
+          mkdir -p "$HOME/.local/bin"
+          export PATH="$HOME/.local/bin:$PATH"
+
+          echo "Installing Trivy..."
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
+
+          echo "Installing OSV-Scanner..."
+          curl -sfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o "$HOME/.local/bin/osv-scanner"
+          chmod +x "$HOME/.local/bin/osv-scanner"
+
+          # Verify installations
+          "$HOME/.local/bin/trivy" --version
+          "$HOME/.local/bin/osv-scanner" --version
+
+          echo "Scanners installed successfully"
+
+    - task:
+        command: |
+          set -e
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Run Trivy filesystem scan for vulnerabilities
+          echo "Running Trivy vulnerability scan..."
+          trivy fs --severity HIGH,CRITICAL --format json --output /tmp/trivy-results.json .
+
+          # Run OSV-Scanner
+          echo "Running OSV-Scanner..."
+          osv-scanner --format json --output /tmp/osv-results.json -r . || true
+
+          echo "Scans complete. Results saved to /tmp/"
+
+    - agent:
+        prompt: |
+          You are a security engineer analyzing vulnerability scan results for a single repository.
+
+          CONTEXT:
+          - This automation runs once per repository across many repositories
+          - Each repository execution updates the same Linear issues in team SAF
+          - There should be ONE Linear issue per CVE/vulnerability per repository
+          - Issue title format: "[CVE-XXXX-XXXXX] {{repository_name}}" or "[Security] package-name - {{repository_name}}"
+          - You are responsible for keeping each issue's description accurate and current
+
+          TASK:
+
+          1. Read scan results from /tmp/trivy-results.json and /tmp/osv-results.json
+          2. Extract findings with severity HIGH or CRITICAL, noting:
+             - CVE ID (if available)
+             - Affected package and version
+             - File location(s) in the repository
+             - Severity level
+             - Vulnerability description
+
+          3. For each HIGH or CRITICAL finding:
+             a. Search Linear team SAF for an existing issue matching this CVE and repository using list_issues
+             b. If found:
+                - Compare current description against latest scan results
+                - Update the description to reflect CURRENT state only (remove outdated file locations, update versions)
+                - Use update_issue to replace the description with accurate, current information
+                - Use create_comment to document what changed (e.g., "Removed stale file path /old/path.go, added new location /new/path.go")
+             c. If not found:
+                - Use create_issue to create a new issue in team SAF
+
+          ISSUE DESCRIPTION FORMAT:
+          ```
+          ## Vulnerability Details
+          - **Repository:** {{repository_url}}
+          - **CVE:** CVE-XXXX-XXXXX (link to NVD if available)
+          - **Severity:** HIGH or CRITICAL
+          - **Affected Package:** package-name@version
+
+          ## Locations
+          - path/to/file1.go:123
+          - path/to/file2.java:456
+
+          ## Remediation
+          Upgrade to version X.Y.Z or later.
+
+          ---
+          Last scanned: YYYY-MM-DD
+          ```
+
+          IMPORTANT:
+          - When updating, REPLACE outdated information, do not append
+          - The description should always reflect the current scan state
+          - If a file location no longer has the vulnerability, remove it
+          - Always update the "Last scanned" timestamp
+
+          If no HIGH or CRITICAL vulnerabilities are found, report that the scan completed with no high-priority findings.
+
+          LINEAR TOOLS:
+          - list_issues: search existing issues (team: "SAF", query: CVE ID + repository name)
+          - create_issue: create new issues (team: "SAF")
+          - update_issue: update issue descriptions
+          - create_comment: document changes made
+
+    - report:
+        outputs:
+          - key: high_count
+            title: High Severity Count
+            string: {}
+            prompt: |
+              Count the number of HIGH severity vulnerabilities found in the scan results.
+              Return ONLY the integer count, nothing else.
+          - key: critical_count
+            title: Critical Severity Count
+            string: {}
+            prompt: |
+              Count the number of CRITICAL severity vulnerabilities found in the scan results.
+              Return ONLY the integer count, nothing else.
+          - key: issues_created
+            title: Linear Issues Created
+            string: {}
+            prompt: |
+              Count how many new Linear issues were created during this execution.
+              Return ONLY the integer count, nothing else.
+          - key: issues_updated
+            title: Linear Issues Updated
+            string: {}
+            prompt: |
+              Count how many existing Linear issues were updated during this execution.
+              Return ONLY the integer count, nothing else.
+          - key: cve_list
+            title: CVE IDs Found
+            string: {}
+            prompt: |
+              List all CVE IDs found in the scan results.
+              Return ONLY a comma-separated list of CVE IDs, or "none" if no CVEs found.
