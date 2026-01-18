@@ -1,4 +1,4 @@
-name: cve-news-feed-monitor
+name: "[Jonas] Fetch Vulnerability Feeds"
 description: Monitors public CVE feeds for vulnerabilities affecting our tech stack (Go, TypeScript, JavaScript, Kotlin, Java, Ubuntu, Debian, AWS, GCP) and creates Linear issues for awareness
 
 triggers:
@@ -74,9 +74,9 @@ action:
              - Have severity HIGH or CRITICAL (CVSS >= 7.0) OR are widely discussed
 
           3. For each relevant vulnerability:
-             a. Search Linear team SAF for existing issue with this CVE ID using list_issues
+             a. Search Linear team "Ona AI Security Engineer" for existing issue with this CVE ID using list_issues
              b. If NOT found, create a new issue using create_issue with:
-                - Team: "SAF"
+                - Team: "Ona AI Security Engineer"
                 - Labels: ["saf-advisory"]
                 - Title format: "[Advisory] CVE-XXXX-XXXXX: Brief description"
 
@@ -126,8 +126,8 @@ action:
           - Skip vulnerabilities already tracked (check list_issues first)
 
           LINEAR TOOLS:
-          - list_issues: search existing issues (team: "SAF", query: CVE ID)
-          - create_issue: create new advisory issues (team: "SAF", labels: ["saf-advisory"])
+          - list_issues: search existing issues (team: "Ona AI Security Engineer", query: CVE ID)
+          - create_issue: create new advisory issues (team: "Ona AI Security Engineer", labels: ["saf-advisory"])
 
           After processing, report how many new advisories were created.
 

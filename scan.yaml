@@ -1,5 +1,5 @@
-name: security-vulnerability-scan
-description: Runs security scanners (Trivy, OSV-Scanner) to find CVEs in Go, Java/Kotlin, and JS/TS codebases, then creates or updates Linear issues for high-priority findings in team SAF
+name: "[Jonas] Scan Repository"
+description: Runs security scanners (Trivy, OSV-Scanner) to find CVEs in Go, Java/Kotlin, and JS/TS codebases, then creates or updates Linear issues for high-priority findings
 
 triggers:
   - manual: {}
@@ -52,7 +52,7 @@ action:
           You are a security engineer checking this repository against known CVE advisories.
 
           CONTEXT:
-          - The CVE news feed automation creates "[Advisory]" issues in Linear team SAF with label "saf-advisory"
+          - The CVE news feed automation creates "[Advisory]" issues in Linear team "Ona AI Security Engineer" with label "saf-advisory"
           - These advisories describe vulnerabilities that MAY affect repositories
           - Your job is to check if THIS repository ({{repository_name}} at {{repository_url}}) is affected
           - You must leave a comment on each advisory to record that this repo was scanned
@@ -62,7 +62,7 @@ action:
           TASK:
 
           1. Fetch all advisory issues from Linear:
-             - Use list_issues with team: "SAF", label: "saf-advisory"
+             - Use list_issues with team: "Ona AI Security Engineer", label: "saf-advisory"
              - These issues have titles starting with "[Advisory]"
 
           2. For each advisory issue:
@@ -111,7 +111,7 @@ action:
           - Write findings to /tmp/advisory-findings.json so the next step can create issues
 
           LINEAR TOOLS:
-          - list_issues: fetch advisories (team: "SAF", label: "saf-advisory")
+          - list_issues: fetch advisories (team: "Ona AI Security Engineer", label: "saf-advisory")
           - create_comment: record scan results on advisory issues
 
     - agent:
@@ -120,7 +120,7 @@ action:
 
           CONTEXT:
           - This automation runs once per repository across many repositories
-          - Each repository execution updates the same Linear issues in team SAF
+          - Each repository execution updates the same Linear issues in team "Ona AI Security Engineer"
           - There should be ONE Linear issue per CVE/vulnerability per repository
           - You are responsible for keeping each issue's description accurate and current
           - Findings come from TWO sources:
@@ -144,14 +144,14 @@ action:
              - Advisory issue ID (for advisory-sourced findings)
 
           3. For each HIGH or CRITICAL finding:
-             a. Search Linear team SAF for an existing issue matching this CVE and repository using list_issues
+             a. Search Linear team "Ona AI Security Engineer" for an existing issue matching this CVE and repository using list_issues
              b. If found:
                 - Compare current description against latest scan results
                 - Update the description to reflect CURRENT state only (remove outdated file locations, update versions)
                 - Use update_issue to replace the description with accurate, current information
                 - Use create_comment to document what changed (e.g., "Removed stale file path /old/path.go, added new location /new/path.go")
              c. If not found:
-                - Use create_issue to create a new issue in team SAF with label: ["saf-finding"]
+                - Use create_issue to create a new issue in team "Ona AI Security Engineer" with label: ["saf-finding"]
 
           4. For advisory-sourced findings that resulted in a new issue:
              - Use create_comment on the ADVISORY issue (from advisory_issue_id) to add the finding issue link:
@@ -194,8 +194,8 @@ action:
           If no HIGH or CRITICAL vulnerabilities are found from any source, report that the scan completed with no high-priority findings.
 
           LINEAR TOOLS:
-          - list_issues: search existing issues (team: "SAF", query: CVE ID + repository name)
-          - create_issue: create new issues (team: "SAF")
+          - list_issues: search existing issues (team: "Ona AI Security Engineer", query: CVE ID + repository name)
+          - create_issue: create new issues (team: "Ona AI Security Engineer")
           - update_issue: update issue descriptions
           - create_comment: document changes made, and link finding issues to advisories
 
