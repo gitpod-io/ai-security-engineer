@@ -14,7 +14,7 @@ action:
         prompt: |
           Select a vulnerability finding to fix.
 
-          1. Fetch issues from Linear (team: "Ona AI Security Engineer", label: "saf-finding")
+          1. Fetch issues from Linear (team: "Ona AI Security Engineer", label: "finding")
           2. Filter to issues containing "{{repository_name}}" in title/description
           3. If none found, report "No findings for {{repository_name}}" and STOP
           4. Select one at random and report: "Selected [identifier]: [title]"

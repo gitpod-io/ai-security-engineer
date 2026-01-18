@@ -52,7 +52,7 @@ action:
           You are a security engineer checking this repository against known CVE advisories.
 
           CONTEXT:
-          - The CVE news feed automation creates "[Advisory]" issues in Linear team "Ona AI Security Engineer" with label "saf-advisory"
+          - The CVE news feed automation creates "[Advisory]" issues in Linear team "Ona AI Security Engineer" with label "advisory"
           - These advisories describe vulnerabilities that MAY affect repositories
           - Your job is to check if THIS repository ({{repository_name}} at {{repository_url}}) is affected
           - You must leave a comment on each advisory to record that this repo was scanned
@@ -62,7 +62,7 @@ action:
           TASK:
 
           1. Fetch all advisory issues from Linear:
-             - Use list_issues with team: "Ona AI Security Engineer", label: "saf-advisory"
+             - Use list_issues with team: "Ona AI Security Engineer", label: "advisory"
              - These issues have titles starting with "[Advisory]"
 
           2. For each advisory issue:
@@ -111,7 +111,7 @@ action:
           - Write findings to /tmp/advisory-findings.json so the next step can create issues
 
           LINEAR TOOLS:
-          - list_issues: fetch advisories (team: "Ona AI Security Engineer", label: "saf-advisory")
+          - list_issues: fetch advisories (team: "Ona AI Security Engineer", label: "advisory")
           - create_comment: record scan results on advisory issues
 
     - agent:
@@ -151,7 +151,7 @@ action:
                 - Use update_issue to replace the description with accurate, current information
                 - Use create_comment to document what changed (e.g., "Removed stale file path /old/path.go, added new location /new/path.go")
              c. If not found:
-                - Use create_issue to create a new issue in team "Ona AI Security Engineer" with label: ["saf-finding"]
+                - Use create_issue to create a new issue in team "Ona AI Security Engineer" with label: ["finding"]
 
           4. For advisory-sourced findings that resulted in a new issue:
              - Use create_comment on the ADVISORY issue (from advisory_issue_id) to add the finding issue link:

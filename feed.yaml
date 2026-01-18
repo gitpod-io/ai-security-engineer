@@ -77,7 +77,7 @@ action:
              a. Search Linear team "Ona AI Security Engineer" for existing issue with this CVE ID using list_issues
              b. If NOT found, create a new issue using create_issue with:
                 - Team: "Ona AI Security Engineer"
-                - Labels: ["saf-advisory"]
+                - Labels: ["advisory"]
                 - Title format: "[Advisory] CVE-XXXX-XXXXX: Brief description"
 
           ISSUE DESCRIPTION FORMAT (include ALL details needed for impact assessment):
@@ -120,14 +120,14 @@ action:
 
           IMPORTANT:
           - Title must start with "[Advisory]" to distinguish from scan findings
-          - Always include the "saf-advisory" label
+          - Always include the "advisory" label
           - Include enough detail for an engineer to grep/search their codebase
           - List specific package names, import paths, and version constraints
           - Skip vulnerabilities already tracked (check list_issues first)
 
           LINEAR TOOLS:
           - list_issues: search existing issues (team: "Ona AI Security Engineer", query: CVE ID)
-          - create_issue: create new advisory issues (team: "Ona AI Security Engineer", labels: ["saf-advisory"])
+          - create_issue: create new advisory issues (team: "Ona AI Security Engineer", labels: ["advisory"])
 
           After processing, report how many new advisories were created.
 
