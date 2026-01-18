@@ -1,54 +1,258 @@
-description: Analyzes a specific CVE, determines if the repository is affected, and if so, automatically remediates the vulnerability by updating dependencies, migrating code to new APIs, running tests, and creating a pull request with the complete fix.
-name: CVE mitigation and version updates
+name: security-finding-fix
+description: Selects a random Linear issue from team SAF with label "saf-finding" for the current repository, checks if already fixed, and either links the existing PR or implements a fix and submits a new PR
+
+triggers:
+  - manual: {}
+    context:
+      projects: {}
 
 action:
   limits:
-    maxParallel: 10
-    maxTotal: 100
+    maxParallel: 1
+    maxTotal: 10
   steps:
     - agent:
         prompt: |
-          Research {CVE_ID}: what is the vulnerability, which library/package, what versions are affected, 
-          what versions have the fix, and which specific functions or code patterns trigger it. Do not look 
-          at repository code yet. 
-          Output: one sentence status only.
+          You are a security engineer selecting a vulnerability finding to fix.
+
+          CONTEXT:
+          - Repository: {{repository_name}} at {{repository_url}}
+          - Linear team SAF contains "[Finding]" issues with label "saf-finding"
+          - Each finding issue title includes the repository name
+
+          TASK:
+
+          1. Fetch all finding issues from Linear:
+             - Use list_issues with team: "SAF", label: "saf-finding"
+             - Filter to issues where the title or description contains "{{repository_name}}"
+
+          2. If NO issues are found for this repository:
+             - Write to /tmp/selected-issue.json: {"status": "NO_ISSUES_FOUND"}
+             - Report: "No saf-finding issues found for {{repository_name}}. Aborting automation."
+             - STOP HERE
+
+          3. If issues ARE found:
+             - Select ONE issue at random from the list
+             - Write the selected issue to /tmp/selected-issue.json:
+               ```json
+               {
+                 "status": "ISSUE_SELECTED",
+                 "issue_id": "uuid",
+                 "issue_identifier": "SAF-123",
+                 "title": "issue title",
+                 "description": "full description",
+                 "cve_id": "CVE-XXXX-XXXXX",
+                 "affected_package": "package-name",
+                 "affected_version": "1.2.3",
+                 "fixed_version": "1.2.4",
+                 "file_locations": ["path/to/file.go"]
+               }
+               ```
+             - Report: "Selected issue [identifier]: [title]"
+
+          LINEAR TOOLS:
+          - list_issues: fetch findings (team: "SAF", label: "saf-finding")
+
     - agent:
         prompt: |
-          Check if this repository has the vulnerable library. Look at dependency files and analyze the full 
-          dependency tree including transitive dependencies. Report the version and whether it's direct or transitive. 
-          If not found or already patched, say so and skip remaining work. Do not analyze source code yet. 
-          Output: one sentence status only.
+          You are a security engineer checking if a vulnerability has already been fixed.
+
+          CONTEXT:
+          - Repository: {{repository_name}} at {{repository_url}}
+          - Selected issue is in /tmp/selected-issue.json
+
+          TASK:
+
+          1. Read /tmp/selected-issue.json
+             - If status is "NO_ISSUES_FOUND", report "No issues to process" and STOP
+
+          2. Check if the vulnerability has already been fixed:
+             a. Read the affected files mentioned in the issue
+             b. Check if the vulnerable version is still present in dependency files
+             c. Check if the vulnerable code pattern still exists
+             d. Search for existing PRs that may have fixed this issue:
+                - Use github_list_pull_requests to find PRs with relevant keywords (CVE ID, package name)
+                - Check both open and merged PRs
+
+          3. If the issue is ALREADY FIXED:
+             - Identify the PR that fixed it (from git history or PR search)
+             - Write to /tmp/fix-status.json:
+               ```json
+               {
+                 "status": "ALREADY_FIXED",
+                 "issue_identifier": "SAF-123",
+                 "issue_id": "uuid",
+                 "pr_url": "https://github.com/owner/repo/pull/123",
+                 "pr_number": 123,
+                 "evidence": "Package upgraded to safe version in PR #123"
+               }
+               ```
+             - Report: "Issue already fixed by PR #[number]"
+
+          4. If the issue is NOT YET FIXED:
+             - Analyze the required fix:
+               - Determine fix type: dependency_upgrade, code_migration, config_change, code_replacement
+               - Identify files to modify
+               - Determine the target version or code change
+             - Write to /tmp/fix-status.json:
+               ```json
+               {
+                 "status": "NEEDS_FIX",
+                 "issue_identifier": "SAF-123",
+                 "issue_id": "uuid",
+                 "fix_type": "dependency_upgrade",
+                 "description": "Upgrade package-name from 1.2.3 to 1.2.4",
+                 "files_to_modify": ["go.mod", "go.sum"],
+                 "target_version": "1.2.4"
+               }
+               ```
+             - Report: "Issue needs fix: [description]"
+
+          GITHUB TOOLS:
+          - github_list_pull_requests: search for existing fix PRs
+
     - agent:
         prompt: |
-          If the vulnerable library was found: search source code to find if our code calls the vulnerable functions. 
-          Show the call chain. If the library was not found or not reachable, skip this work. Do not modify any files yet. 
-          Output: one sentence status only.
-    - agent:
-        prompt: |
-          If the vulnerability is reachable: update the dependency to the fixed version, 
-          adjust code if APIs changed, and run tests. Otherwise skip this work. Do not create a PR yet. 
-          Output: one sentence status only.
+          You are a security engineer handling a vulnerability based on its fix status.
+
+          CONTEXT:
+          - Repository: {{repository_name}}
+          - Fix status is in /tmp/fix-status.json
+          - Selected issue is in /tmp/selected-issue.json
+
+          TASK:
+
+          1. Read /tmp/fix-status.json
+
+          2. If status is "ALREADY_FIXED":
+             a. Use create_comment on the Linear issue to document the existing fix:
+                ```
+                This vulnerability has already been fixed.
+
+                **PR:** [pr_url]
+                **Evidence:** [evidence from fix-status.json]
+
+                This issue can be closed.
+                ```
+             b. Write to /tmp/automation-result.json:
+                ```json
+                {
+                  "action": "LINKED_EXISTING_PR",
+                  "issue_identifier": "SAF-123",
+                  "pr_url": "https://github.com/...",
+                  "message": "Linked existing fix PR to Linear issue"
+                }
+                ```
+             c. Report: "Linked existing PR to issue [identifier]. Automation complete."
+             d. STOP HERE - do not proceed to further steps
+
+          3. If status is "NEEDS_FIX":
+             a. Implement the fix based on fix_type:
+                - For dependency_upgrade: Update version in dependency file, run update commands
+                - For code_migration: Update API calls to new interface
+                - For config_change: Update configuration files
+                - For code_replacement: Replace vulnerable code patterns
+             b. Verify the fix:
+                - Run tests if available
+                - Ensure build passes
+             c. Stage the changes with git add
+             d. Write to /tmp/automation-result.json:
+                ```json
+                {
+                  "action": "IMPLEMENTED_FIX",
+                  "issue_identifier": "SAF-123",
+                  "fix_description": "Upgraded package-name to 1.2.4",
+                  "files_modified": ["go.mod", "go.sum"],
+                  "tests_passed": true
+                }
+                ```
+             e. Report: "Implemented fix: [description]. Ready for PR."
+
+          LINEAR TOOLS:
+          - create_comment: document existing fix on Linear issue
+
     - pullRequest:
-        branch: ona/cve-remediation
-        description: Automated CVE remediation by Ona Agent.
+        branch: jonas/{{linear_issue_id}}-fix
+        description: |
+          Automated security fix by Ona Agent.
+
+          See /tmp/automation-result.json for details.
         draft: false
-        title: "fix: CVE remediation"
+        title: "fix: security vulnerability remediation"
+
     - agent:
-        prompt: |-
-          Generate a security analysis report using all information from previous steps. Format:
+        prompt: |
+          You are a security engineer documenting the completed fix.
 
-          **Result:** [Vulnerable/Not Vulnerable/Already Patched] - one line summary
+          CONTEXT:
+          - A PR has been created with the security fix
+          - Result is in /tmp/automation-result.json
+          - Selected issue is in /tmp/selected-issue.json
 
-          **Impact:** CVSS score and worst-case scenario
+          TASK:
 
-          **Evidence:** Call chain showing reachability (or why not reachable)
+          1. Read /tmp/automation-result.json
 
-          **Fix:** What was changed (if applicable)
+          2. If action is "LINKED_EXISTING_PR":
+             - Report: "No new PR created. Existing fix was linked to the Linear issue."
+             - STOP HERE
 
-          **Verification:** Test results (if applicable)
+          3. If action is "IMPLEMENTED_FIX":
+             a. Use create_comment on the Linear issue:
+                ```
+                Fix implemented in new PR.
 
-          Put the outcome first. Be concise.
-triggers:
-  - context:
-      projects: {}
-    manual: {}
+                **Change:** [fix_description]
+                **Files modified:** [list of files]
+                **Tests:** [pass/fail]
+
+                Please review and merge the PR to resolve this issue.
+                ```
+             b. Generate summary report:
+                ```
+                ## Security Fix Summary
+
+                **Repository:** {{repository_name}}
+                **Issue:** [issue_identifier]
+                **Change:** [fix_description]
+
+                ### Files Modified
+                - [list files]
+
+                ### Verification
+                - Tests: [pass/fail]
+
+                ### Next Steps
+                - Review and merge the PR
+                - Close the Linear issue after verification
+                ```
+
+          LINEAR TOOLS:
+          - create_comment: document new fix on Linear issue
+
+    - report:
+        outputs:
+          - key: action_taken
+            title: Action Taken
+            string: {}
+            prompt: |
+              What action was taken? (LINKED_EXISTING_PR, IMPLEMENTED_FIX, NO_ISSUES_FOUND)
+              Return ONLY the action type, nothing else.
+          - key: issue_identifier
+            title: Issue Processed
+            string: {}
+            prompt: |
+              What is the Linear issue identifier that was processed (e.g., SAF-123)?
+              Return ONLY the identifier, or "none" if no issue was processed.
+          - key: fix_type
+            title: Fix Type
+            string: {}
+            prompt: |
+              If a fix was implemented, what type? (dependency_upgrade, code_migration, config_change, code_replacement)
+              Return ONLY the fix type, or "n/a" if no fix was implemented.
+          - key: files_modified
+            title: Files Modified
+            string: {}
+            prompt: |
+              List the files that were modified to implement the fix.
+              Return ONLY a comma-separated list of file paths, or "none" if no files were modified.
