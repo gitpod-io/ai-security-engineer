@@ -1,0 +1,54 @@
+description: Analyzes a specific CVE, determines if the repository is affected, and if so, automatically remediates the vulnerability by updating dependencies, migrating code to new APIs, running tests, and creating a pull request with the complete fix.
+name: CVE mitigation and version updates
+
+action:
+  limits:
+    maxParallel: 10
+    maxTotal: 100
+  steps:
+    - agent:
+        prompt: |
+          Research {CVE_ID}: what is the vulnerability, which library/package, what versions are affected, 
+          what versions have the fix, and which specific functions or code patterns trigger it. Do not look 
+          at repository code yet. 
+          Output: one sentence status only.
+    - agent:
+        prompt: |
+          Check if this repository has the vulnerable library. Look at dependency files and analyze the full 
+          dependency tree including transitive dependencies. Report the version and whether it's direct or transitive. 
+          If not found or already patched, say so and skip remaining work. Do not analyze source code yet. 
+          Output: one sentence status only.
+    - agent:
+        prompt: |
+          If the vulnerable library was found: search source code to find if our code calls the vulnerable functions. 
+          Show the call chain. If the library was not found or not reachable, skip this work. Do not modify any files yet. 
+          Output: one sentence status only.
+    - agent:
+        prompt: |
+          If the vulnerability is reachable: update the dependency to the fixed version, 
+          adjust code if APIs changed, and run tests. Otherwise skip this work. Do not create a PR yet. 
+          Output: one sentence status only.
+    - pullRequest:
+        branch: ona/cve-remediation
+        description: Automated CVE remediation by Ona Agent.
+        draft: false
+        title: "fix: CVE remediation"
+    - agent:
+        prompt: |-
+          Generate a security analysis report using all information from previous steps. Format:
+
+          **Result:** [Vulnerable/Not Vulnerable/Already Patched] - one line summary
+
+          **Impact:** CVSS score and worst-case scenario
+
+          **Evidence:** Call chain showing reachability (or why not reachable)
+
+          **Fix:** What was changed (if applicable)
+
+          **Verification:** Test results (if applicable)
+
+          Put the outcome first. Be concise.
+triggers:
+  - context:
+      projects: {}
+    manual: {}
