@@ -15,19 +15,44 @@ action:
         command: |
           set -e
 
-          # Calculate date range (last 2 days)
+          # Install security scanners to check coverage
+          mkdir -p "$HOME/.local/bin"
+          export PATH="$HOME/.local/bin:$PATH"
+
+          echo "Installing Trivy..."
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
+
+          echo "Installing OSV-Scanner..."
+          curl -sfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o "$HOME/.local/bin/osv-scanner"
+          chmod +x "$HOME/.local/bin/osv-scanner"
+
+          # Download fresh vulnerability databases
+          echo "Updating Trivy database..."
+          trivy image --download-db-only
+
+          echo "Scanners installed and databases updated"
+
+    - task:
+        command: |
+          set -e
+
+          # Calculate date ranges
+          # - 48 hours for scanner-covered sources (NVD, OSV, GitHub)
+          # - 2 weeks for non-scanner sources (CISA KEV, AWS, GCP)
           END_DATE=$(date -u +%Y-%m-%dT%H:%M:%S.000)
-          START_DATE=$(date -u -d "2 days ago" +%Y-%m-%dT%H:%M:%S.000)
+          START_DATE_48H=$(date -u -d "2 days ago" +%Y-%m-%dT%H:%M:%S.000)
+          START_DATE_2W=$(date -u -d "2 weeks ago" +%Y-%m-%dT%H:%M:%S.000)
 
-          echo "Fetching CVEs published between $START_DATE and $END_DATE"
+          echo "Fetching scanner-covered sources: $START_DATE_48H to $END_DATE"
+          echo "Fetching non-scanner sources: $START_DATE_2W to $END_DATE"
 
-          # Fetch from NVD API (National Vulnerability Database)
+          # Fetch from NVD API (National Vulnerability Database) - last 48 hours
           # NVD API docs: https://nvd.nist.gov/developers/vulnerabilities
-          curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?pubStartDate=${START_DATE}&pubEndDate=${END_DATE}&resultsPerPage=2000" \
+          curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?pubStartDate=${START_DATE_48H}&pubEndDate=${END_DATE}&resultsPerPage=2000" \
             -H "Accept: application/json" \
             -o /tmp/nvd-cves.json
 
-          # Fetch from OSV (Open Source Vulnerabilities) for ecosystem-specific data
+          # Fetch from OSV (Open Source Vulnerabilities) - last 48 hours
           # Query for each ecosystem we care about
           for ecosystem in "Go" "npm" "Maven" "PyPI"; do
             echo "Fetching OSV data for $ecosystem..."
@@ -38,23 +63,23 @@ action:
               -o "/tmp/osv-${ecosystem}.json" || true
           done
 
-          # Fetch GitHub Security Advisories (public feed)
+          # Fetch GitHub Security Advisories - last 48 hours (filtered by agent)
           curl -s "https://api.github.com/advisories?per_page=100&sort=published&direction=desc" \
             -H "Accept: application/vnd.github+json" \
             -o /tmp/github-advisories.json || true
 
-          # Fetch CISA Known Exploited Vulnerabilities (KEV) catalog
-          # These are actively exploited in the wild - highest priority
+          # Fetch CISA Known Exploited Vulnerabilities (KEV) catalog - last 2 weeks
+          # These are actively exploited in the wild - highest priority, not in scanners
           echo "Fetching CISA KEV catalog..."
           curl -s "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" \
             -o /tmp/cisa-kev.json || true
 
-          # Fetch AWS Security Bulletins RSS
+          # Fetch AWS Security Bulletins RSS - last 2 weeks (not in scanners)
           echo "Fetching AWS Security Bulletins..."
           curl -s "https://aws.amazon.com/security/security-bulletins/feed/" \
             -o /tmp/aws-security.xml || true
 
-          # Fetch GCP Security Bulletins
+          # Fetch GCP Security Bulletins - last 2 weeks (not in scanners)
           echo "Fetching GCP Security Bulletins..."
           curl -s "https://cloud.google.com/feeds/google-cloud-security-bulletins.xml" \
             -o /tmp/gcp-security.xml || true
@@ -64,7 +89,7 @@ action:
 
     - agent:
         prompt: |
-          Create Linear issues for new vulnerabilities affecting our stack.
+          Create Linear issues for new vulnerabilities NOT yet covered by scanners.
 
           FEEDS (already fetched):
           - /tmp/nvd-cves.json, /tmp/osv-*.json, /tmp/github-advisories.json
@@ -74,11 +99,19 @@ action:
           FILTER TO:
           - Stack: Go, TypeScript, JavaScript, Kotlin, Java, Ubuntu, Debian, AWS, GCP
           - Severity: HIGH/CRITICAL (CVSS >= 7.0) or CISA KEV
-          - Published: last 2 days
+          - Time ranges based on scanner coverage:
+            - Scanner-covered sources (NVD, OSV, GitHub): last 48 hours only
+            - Non-scanner sources (CISA KEV, AWS, GCP bulletins): last 2 weeks
 
           FOR EACH VULNERABILITY:
-          1. Search Linear team "Ona AI Security Engineer" for existing issue with advisory ID
-          2. If not found, create issue with:
+          1. Check if it affects our stack (Go, TS, JS, Kotlin, Java, Ubuntu, Debian, AWS, GCP)
+             - If not applicable to our stack, SKIP
+          2. Check if scanners already cover it:
+             - Query OSV API: curl -s "https://api.osv.dev/v1/vulns/<ID>"
+             - Check Trivy DB: trivy image --list-all-pkgs 2>&1 | grep -i "<ID>"
+             - If scanner already has this vulnerability, SKIP (no issue needed)
+          3. Search Linear team "Ona AI Security Engineer" for existing issue with advisory ID
+          4. If affects our stack AND not covered by scanners AND not in Linear, create issue with:
              - Title: "[Advisory] <ID>: Brief description" (ID = CVE, GHSA, USN, DSA, GO-, or vendor ID)
              - Labels: ["advisory"]
 
@@ -88,6 +121,7 @@ action:
 
           ## Why This Was Flagged
           - [Reason: e.g., "CVSS 9.8 CRITICAL", "CISA KEV (actively exploited)", "Affects Go ecosystem"]
+          - **Not yet in Trivy/OSV-Scanner databases** (early warning)
 
           ## Vulnerability Summary
           - **Advisory ID:** CVE-XXXX-XXXXX / GHSA-XXXX / USN-XXXX / GO-XXXX-XXXX (use available ID)
@@ -118,7 +152,7 @@ action:
           - [Link to source advisory]
           ```
 
-          Report count of new advisories created.
+          Report: total vulnerabilities found, skipped (scanner covered), and advisories created.
 
     - agent:
         prompt: |
@@ -127,43 +161,43 @@ action:
           1. List issues in Linear team "Ona AI Security Engineer" with label "advisory"
 
           2. For each advisory, check if it should be closed:
-             a. **Age check:** Created more than 7 days ago
-             b. **Scanner coverage check:** Query Trivy and OSV databases to see if they now include this vulnerability:
-                - Run: trivy image --download-db-only (ensures fresh DB)
-                - Run: trivy sbom --list-all-pkgs /dev/null 2>&1 | grep -i "<CVE-ID>" or check OSV API
-                - If the CVE/advisory ID appears in scanner databases, it's now detectable
+             a. **Scanner coverage:** Query OSV API or Trivy DB for the advisory ID
+                - If now in scanner databases, close with comment:
+                  "Auto-closing: now detectable by Trivy/OSV-Scanner. Future occurrences will be caught by repository scans."
+             b. **Age:** If created more than 7 days ago, close with comment:
+                  "Auto-closing: advisory is over 7 days old. Reopen if still relevant."
 
-          3. Close the issue if EITHER condition is met:
-             - If closing due to age:
-               Comment: "Auto-closing: advisory is over 7 days old. Reopen if still relevant."
-             - If closing due to scanner coverage:
-               Comment: "Auto-closing: this vulnerability is now detectable by Trivy/OSV-Scanner. Future occurrences will be caught by repository scans."
-
-          4. Report count of closed advisories and reason breakdown
+          3. Report count of closed advisories
 
     - report:
         outputs:
-          - key: total_cves_fetched
-            title: Total CVEs Fetched
+          - key: total_fetched
+            title: Total Vulnerabilities Fetched
             string: {}
             prompt: |
-              Count the total number of CVEs retrieved from all feeds before filtering.
+              Count the total number of vulnerabilities retrieved from all feeds before filtering.
               Return ONLY the integer count, nothing else.
-          - key: relevant_cves
-            title: Relevant CVEs (matching tech stack)
+          - key: relevant_count
+            title: Relevant (matching tech stack)
             string: {}
             prompt: |
-              Count the number of CVEs that matched our target tech stack filter.
+              Count the number of vulnerabilities that matched our target tech stack filter.
+              Return ONLY the integer count, nothing else.
+          - key: skipped_scanner_covered
+            title: Skipped (already in scanners)
+            string: {}
+            prompt: |
+              Count how many vulnerabilities were skipped because Trivy/OSV already cover them.
               Return ONLY the integer count, nothing else.
           - key: advisories_created
-            title: Linear Advisories Created
+            title: Advisories Created
             string: {}
             prompt: |
               Count how many new Linear advisory issues were created.
               Return ONLY the integer count, nothing else.
-          - key: cve_ids
-            title: CVE IDs Processed
+          - key: advisories_closed
+            title: Advisories Closed
             string: {}
             prompt: |
-              List all CVE IDs that were processed and created as advisories.
-              Return ONLY a comma-separated list of CVE IDs, or "none" if no advisories created.
+              Count how many advisory issues were closed (due to age or scanner coverage).
+              Return ONLY the integer count, nothing else.
