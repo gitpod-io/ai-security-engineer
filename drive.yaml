@@ -1,0 +1,87 @@
+name: "[Jonas] Drive Pull Request until merge"
+description: Monitors open PRs assigned to me, fixes build failures, responds to reviewer feedback, and enables auto-merge when ready
+
+triggers:
+  - manual: {}
+    context:
+      projects: {}
+
+action:
+  limits:
+    maxParallel: 1
+    maxTotal: 10
+  steps:
+    - agent:
+        prompt: |
+          Find open pull requests assigned to me.
+
+          1. List open PRs in this repository where I am the assignee
+          2. If none found, report "No open PRs assigned to me" and STOP
+          3. Select one PR and report: "Processing PR #[number]: [title]"
+
+          Extract: PR number, title, branch, current status (checks, reviews, mergeable state).
+
+    - agent:
+        prompt: |
+          Analyze the PR and determine what action is needed.
+
+          Check the PR status:
+          - Are CI checks passing or failing?
+          - Are there pending review comments that need responses?
+          - Is there an approving review?
+          - Is the PR mergeable?
+
+          Determine action needed:
+          - BUILD_FAILED: CI checks are failing
+          - FEEDBACK_PENDING: Reviewer left comments/requested changes
+          - READY_FOR_MERGE: Checks pass (or only unrelated failures) and has approval
+          - WAITING: Checks running or awaiting review, no action needed
+
+          Report: "[ACTION]: [reason]"
+
+    - agent:
+        prompt: |
+          Take action based on PR status.
+
+          If BUILD_FAILED:
+          1. Fetch CI logs and identify failure cause
+          2. Determine if failure is caused by this PR or is unrelated (flaky test, infra issue)
+          3. If PR caused failure: fix the code, commit, push
+          4. If unrelated: comment on PR explaining why the failure is unrelated, re-trigger CI if possible
+
+          If FEEDBACK_PENDING:
+          1. Read all unresolved review comments
+          2. For each comment: implement the requested change or explain why not
+          3. Commit and push changes
+          4. Reply to each review comment explaining how feedback was addressed
+          5. Request re-review if changes were made
+
+          If READY_FOR_MERGE:
+          1. Enable auto-merge on the PR
+          2. Report: "Auto-merge enabled"
+
+          If WAITING:
+          1. Report: "No action needed, PR is waiting for CI/review"
+
+    - report:
+        outputs:
+          - key: pr_processed
+            title: PR Processed
+            string: {}
+            prompt: |
+              Return ONLY the PR number processed, or "none" if no PRs found.
+          - key: action_taken
+            title: Action Taken
+            string: {}
+            prompt: |
+              Return ONLY: FIXED_BUILD, COMMENTED_UNRELATED, ADDRESSED_FEEDBACK, ENABLED_AUTO_MERGE, WAITING, or NO_PRS
+          - key: commits_pushed
+            title: Commits Pushed
+            string: {}
+            prompt: |
+              Return ONLY the number of commits pushed, or "0".
+          - key: comments_responded
+            title: Review Comments Responded
+            string: {}
+            prompt: |
+              Return ONLY the number of review comments responded to, or "0".
