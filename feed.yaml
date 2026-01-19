@@ -43,64 +43,86 @@ action:
             -H "Accept: application/vnd.github+json" \
             -o /tmp/github-advisories.json || true
 
+          # Fetch CISA Known Exploited Vulnerabilities (KEV) catalog
+          # These are actively exploited in the wild - highest priority
+          echo "Fetching CISA KEV catalog..."
+          curl -s "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" \
+            -o /tmp/cisa-kev.json || true
+
+          # Fetch Go Vulnerability Database index
+          # Official Go vulnerability data, more accurate than NVD for Go packages
+          echo "Fetching Go Vulnerability Database..."
+          curl -s "https://vuln.go.dev/index.json" \
+            -o /tmp/go-vuln-index.json || true
+
+          # Fetch Ubuntu Security Notices (USN) RSS feed
+          echo "Fetching Ubuntu Security Notices..."
+          curl -s "https://ubuntu.com/security/notices/rss.xml" \
+            -o /tmp/ubuntu-usn.xml || true
+
+          # Fetch Debian Security Tracker JSON
+          echo "Fetching Debian Security Tracker..."
+          curl -s "https://security-tracker.debian.org/tracker/data/json" \
+            -o /tmp/debian-security.json || true
+
+          # Fetch AWS Security Bulletins RSS
+          echo "Fetching AWS Security Bulletins..."
+          curl -s "https://aws.amazon.com/security/security-bulletins/feed/" \
+            -o /tmp/aws-security.xml || true
+
+          # Fetch GCP Security Bulletins
+          echo "Fetching GCP Security Bulletins..."
+          curl -s "https://cloud.google.com/feeds/google-cloud-security-bulletins.xml" \
+            -o /tmp/gcp-security.xml || true
+
           echo "CVE data fetched successfully"
           echo "NVD results: $(cat /tmp/nvd-cves.json | head -c 500)"
 
     - agent:
         prompt: |
-          You are a security intelligence analyst monitoring public vulnerability feeds.
+          Create Linear issues for new vulnerabilities affecting our stack.
 
-          CONTEXT:
-          - This automation runs periodically to track new CVE publications
-          - You are creating AWARENESS issues, not findings from code scans
-          - Each issue describes a vulnerability that MAY affect our systems
-          - Engineers will use these issues to assess if their codebases are impacted
+          FEEDS (already fetched):
+          - /tmp/nvd-cves.json, /tmp/osv-*.json, /tmp/github-advisories.json
+          - /tmp/cisa-kev.json (actively exploited - always include)
+          - /tmp/go-vuln-index.json, /tmp/ubuntu-usn.xml, /tmp/debian-security.json
+          - /tmp/aws-security.xml, /tmp/gcp-security.xml
 
-          TARGET TECH STACK (filter vulnerabilities to these only):
-          - Languages: Golang, TypeScript, JavaScript, Kotlin, Java
-          - Operating Systems: Ubuntu Linux, Debian Linux
-          - Cloud Providers: Amazon Web Services (AWS), Google Cloud Platform (GCP)
+          FILTER TO:
+          - Stack: Go, TypeScript, JavaScript, Kotlin, Java, Ubuntu, Debian, AWS, GCP
+          - Severity: HIGH/CRITICAL (CVSS >= 7.0) or CISA KEV
+          - Published: last 2 days
 
-          TASK:
+          FOR EACH VULNERABILITY:
+          1. Search Linear team "Ona AI Security Engineer" for existing issue with advisory ID
+          2. If not found, create issue with:
+             - Title: "[Advisory] <ID>: Brief description" (ID = CVE, GHSA, USN, DSA, GO-, or vendor ID)
+             - Labels: ["advisory"]
 
-          1. Read the fetched CVE data from:
-             - /tmp/nvd-cves.json (NVD feed)
-             - /tmp/osv-*.json (OSV ecosystem feeds)
-             - /tmp/github-advisories.json (GitHub advisories)
-
-          2. Filter to vulnerabilities that:
-             - Were published within the last 2 days
-             - Affect our target tech stack (check CPE strings, ecosystem tags, affected packages)
-             - Have severity HIGH or CRITICAL (CVSS >= 7.0) OR are widely discussed
-
-          3. For each relevant vulnerability:
-             a. Search Linear team "Ona AI Security Engineer" for existing issue with this CVE ID using list_issues
-             b. If NOT found, create a new issue using create_issue with:
-                - Team: "Ona AI Security Engineer"
-                - Labels: ["advisory"]
-                - Title format: "[Advisory] CVE-XXXX-XXXXX: Brief description"
-
-          ISSUE DESCRIPTION FORMAT (include ALL details needed for impact assessment):
+          ISSUE DESCRIPTION FORMAT:
           ```
           > **This is a vulnerability ADVISORY, not a finding. Review to determine if your codebase is affected.**
 
+          ## Why This Was Flagged
+          - [Reason: e.g., "CVSS 9.8 CRITICAL", "CISA KEV (actively exploited)", "Affects Go ecosystem"]
+
           ## Vulnerability Summary
-          - **CVE ID:** CVE-XXXX-XXXXX
+          - **Advisory ID:** CVE-XXXX-XXXXX / GHSA-XXXX / USN-XXXX / GO-XXXX-XXXX (use available ID)
           - **Published:** YYYY-MM-DD
-          - **CVSS Score:** X.X (CRITICAL/HIGH/MEDIUM)
-          - **Attack Vector:** Network/Local/Adjacent
+          - **CVSS Score:** X.X (CRITICAL/HIGH/MEDIUM) or "Not scored"
+          - **CISA KEV:** Yes/No
+          - **Source:** NVD / GitHub / OSV / Go Vuln DB / Ubuntu / Debian / AWS / GCP
 
           ## Affected Components
-          - **Ecosystem:** Go / npm / Maven / etc.
+          - **Ecosystem:** Go / npm / Maven / OS / Cloud
           - **Package(s):** package-name
           - **Vulnerable Versions:** < X.Y.Z
           - **Fixed Version:** X.Y.Z (if available)
 
           ## Technical Details
-          [Description of the vulnerability, attack scenario, and potential impact]
+          [Description of the vulnerability and potential impact]
 
           ## Detection Guidance
-          To check if your codebase is affected:
           1. Search for imports/dependencies on: `package-name`
           2. Check version in: go.mod / package.json / pom.xml / build.gradle
           3. Vulnerable if version matches: < X.Y.Z
@@ -110,26 +132,20 @@ action:
           - Workaround: [if available]
 
           ## References
-          - NVD: https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX
-          - Advisory: [link to vendor advisory]
-          - GitHub Advisory: [link if available]
-
-          ---
-          *Auto-generated from CVE feed on YYYY-MM-DD*
+          - [Link to source advisory]
           ```
 
-          IMPORTANT:
-          - Title must start with "[Advisory]" to distinguish from scan findings
-          - Always include the "advisory" label
-          - Include enough detail for an engineer to grep/search their codebase
-          - List specific package names, import paths, and version constraints
-          - Skip vulnerabilities already tracked (check list_issues first)
+          Report count of new advisories created.
 
-          LINEAR TOOLS:
-          - list_issues: search existing issues (team: "Ona AI Security Engineer", query: CVE ID)
-          - create_issue: create new advisory issues (team: "Ona AI Security Engineer", labels: ["advisory"])
+    - agent:
+        prompt: |
+          Close advisory issues older than one week.
 
-          After processing, report how many new advisories were created.
+          1. List issues in Linear team "Ona AI Security Engineer" with label "advisory"
+          2. For each issue created more than 7 days ago:
+             - Add comment: "Auto-closing: advisory is over 7 days old. Reopen if still relevant."
+             - Close the issue
+          3. Report count of closed advisories
 
     - report:
         outputs:
