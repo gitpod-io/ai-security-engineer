@@ -49,22 +49,6 @@ action:
           curl -s "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" \
             -o /tmp/cisa-kev.json || true
 
-          # Fetch Go Vulnerability Database index
-          # Official Go vulnerability data, more accurate than NVD for Go packages
-          echo "Fetching Go Vulnerability Database..."
-          curl -s "https://vuln.go.dev/index.json" \
-            -o /tmp/go-vuln-index.json || true
-
-          # Fetch Ubuntu Security Notices (USN) RSS feed
-          echo "Fetching Ubuntu Security Notices..."
-          curl -s "https://ubuntu.com/security/notices/rss.xml" \
-            -o /tmp/ubuntu-usn.xml || true
-
-          # Fetch Debian Security Tracker JSON
-          echo "Fetching Debian Security Tracker..."
-          curl -s "https://security-tracker.debian.org/tracker/data/json" \
-            -o /tmp/debian-security.json || true
-
           # Fetch AWS Security Bulletins RSS
           echo "Fetching AWS Security Bulletins..."
           curl -s "https://aws.amazon.com/security/security-bulletins/feed/" \
@@ -85,7 +69,6 @@ action:
           FEEDS (already fetched):
           - /tmp/nvd-cves.json, /tmp/osv-*.json, /tmp/github-advisories.json
           - /tmp/cisa-kev.json (actively exploited - always include)
-          - /tmp/go-vuln-index.json, /tmp/ubuntu-usn.xml, /tmp/debian-security.json
           - /tmp/aws-security.xml, /tmp/gcp-security.xml
 
           FILTER TO:
@@ -111,7 +94,7 @@ action:
           - **Published:** YYYY-MM-DD
           - **CVSS Score:** X.X (CRITICAL/HIGH/MEDIUM) or "Not scored"
           - **CISA KEV:** Yes/No
-          - **Source:** NVD / GitHub / OSV / Go Vuln DB / Ubuntu / Debian / AWS / GCP
+          - **Source:** NVD / GitHub / OSV / CISA KEV / AWS / GCP
 
           ## Affected Components
           - **Ecosystem:** Go / npm / Maven / OS / Cloud
@@ -139,13 +122,24 @@ action:
 
     - agent:
         prompt: |
-          Close advisory issues older than one week.
+          Close advisory issues that are old or now detectable by scanners.
 
           1. List issues in Linear team "Ona AI Security Engineer" with label "advisory"
-          2. For each issue created more than 7 days ago:
-             - Add comment: "Auto-closing: advisory is over 7 days old. Reopen if still relevant."
-             - Close the issue
-          3. Report count of closed advisories
+
+          2. For each advisory, check if it should be closed:
+             a. **Age check:** Created more than 7 days ago
+             b. **Scanner coverage check:** Query Trivy and OSV databases to see if they now include this vulnerability:
+                - Run: trivy image --download-db-only (ensures fresh DB)
+                - Run: trivy sbom --list-all-pkgs /dev/null 2>&1 | grep -i "<CVE-ID>" or check OSV API
+                - If the CVE/advisory ID appears in scanner databases, it's now detectable
+
+          3. Close the issue if EITHER condition is met:
+             - If closing due to age:
+               Comment: "Auto-closing: advisory is over 7 days old. Reopen if still relevant."
+             - If closing due to scanner coverage:
+               Comment: "Auto-closing: this vulnerability is now detectable by Trivy/OSV-Scanner. Future occurrences will be caught by repository scans."
+
+          4. Report count of closed advisories and reason breakdown
 
     - report:
         outputs:

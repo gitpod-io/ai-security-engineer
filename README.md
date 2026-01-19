@@ -11,9 +11,6 @@ flowchart TD
         OSV_API["OSV API<br/>(Go/npm/Maven/PyPI)"]
         GH["GitHub Advisories"]
         CISA["CISA KEV<br/>(Actively Exploited)"]
-        GOVULN["Go Vuln DB"]
-        UBUNTU["Ubuntu USN"]
-        DEBIAN["Debian Security"]
         AWS["AWS Bulletins"]
         GCP["GCP Bulletins"]
     end
@@ -48,13 +45,10 @@ flowchart TD
     OSV_API --> FETCH
     GH --> FETCH
     CISA --> FETCH
-    GOVULN --> FETCH
-    UBUNTU --> FETCH
-    DEBIAN --> FETCH
     AWS --> FETCH
     GCP --> FETCH
     FETCH --> ADV
-    ADV -->|after 7 days| CLOSE["Auto-close<br/>with comment"]
+    ADV -->|7 days old OR scanner detects| CLOSE["Auto-close<br/>with comment"]
 
     TRIVY --> CONSOLIDATE
     OSV_SCAN --> CONSOLIDATE
@@ -73,7 +67,7 @@ flowchart TD
 
 | Automation | Trigger | Input | Output |
 |------------|---------|-------|--------|
-| `[Jonas] Fetch Vulnerability Feeds` | Manual/Scheduled | NVD, OSV, GitHub, CISA KEV, Go Vuln DB, Ubuntu USN, Debian, AWS, GCP | Advisory issues (label: `advisory`), auto-closes after 7 days |
+| `[Jonas] Fetch Vulnerability Feeds` | Manual/Scheduled | NVD, OSV, GitHub, CISA KEV, AWS, GCP | Advisory issues (label: `advisory`), auto-closes when scanners detect or after 7 days |
 | `[Jonas] Scan Repository` | Manual | Repository code + Advisories | Finding issues (label: `finding`) |
 | `[Jonas] Fix Security Issue` | Manual | Finding issues | Pull requests |
 
@@ -85,7 +79,7 @@ flowchart TD
 - Contains detection guidance for engineers
 - Includes "Why This Was Flagged" reason (CVSS score, CISA KEV, ecosystem match)
 - Supports multiple ID types: CVE, GHSA, USN, DSA, GO-, or vendor-specific
-- Auto-closed after 7 days with explanatory comment
+- Auto-closed when Trivy/OSV-Scanner can detect the vulnerability, or after 7 days
 
 **Findings** (`[Finding]` prefix, `finding` label)
 - Confirmed vulnerability in a specific repository
