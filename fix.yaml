@@ -1,5 +1,5 @@
 name: "[Jonas] Fix Security Issue"
-description: Fixes a random Linear finding for the current repository
+description: Fixes a vulnerability finding from Linear for the current repository
 triggers:
   - manual: {}
     context:
@@ -19,16 +19,16 @@ action:
           3. If none found, report "No findings for {{repository_name}}" and STOP
           4. Select one at random and report: "Selected [identifier]: [title]"
 
-          If the list_issue tool returns an empty list, it could be that filtering by team or lable is brioken. In this case, query by repo name.
+          If list_issues returns empty, try querying by repo name instead of team/label.
 
-          Extract: issue_id, identifier, CVE ID, affected package/version, fixed version, file locations.
+          Extract: issue_id, identifier, advisory ID (CVE/GHSA/vendor), affected package/version, fixed version, file locations.
 
     - agent:
         prompt: |
           Check if the selected vulnerability is already fixed.
 
           1. Read affected files and dependency files for the vulnerable version
-          2. Search PRs (open and merged) for the CVE ID or package name
+          2. Search PRs (open and merged) for the advisory ID or package name
 
           If ALREADY FIXED:
           - Identify the fixing PR
