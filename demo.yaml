@@ -1,0 +1,98 @@
+name: "[Jonas][Demo] Security Fix Pipeline"
+description: Fetches CISA KEV feed, scans with Trivy, fixes the highest priority vulnerability, and submits a PR
+
+triggers:
+  - manual: {}
+    context:
+      projects: {}
+
+action:
+  limits:
+    maxParallel: 1
+    maxTotal: 10
+  steps:
+    # Step 1: Fetch CISA KEV - actively exploited vulnerabilities not in scanner databases
+    - task:
+        command: |
+          set -e
+          curl -s "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" -o /tmp/cisa-kev.json
+          echo "Fetched CISA KEV catalog: $(jq '.vulnerabilities | length' /tmp/cisa-kev.json) entries"
+
+    # Step 2: Install Trivy and scan for vulnerabilities
+    - task:
+        command: |
+          set -e
+          mkdir -p "$HOME/.local/bin"
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
+          export PATH="$HOME/.local/bin:$PATH"
+          trivy fs --severity HIGH,CRITICAL --format json --output /tmp/trivy-results.json .
+          echo "Scan complete"
+
+    # Step 3: Select highest priority finding
+    - agent:
+        prompt: |
+          Select the highest priority vulnerability from /tmp/trivy-results.json.
+
+          Priority order:
+          1. In CISA KEV (/tmp/cisa-kev.json) - actively exploited
+          2. CRITICAL before HIGH severity
+          3. Oldest published date first
+
+          Report: "[advisory_id] ([severity]): [package]@[version] → [fixed_version]"
+          If no findings, report "No vulnerabilities found" and STOP.
+
+    # Step 4: Implement the fix
+    - agent:
+        prompt: |
+          Fix the selected vulnerability:
+          1. Update the dependency to the fixed version
+          2. If API changed, update calling code
+
+          Report: "[fix_type]: [files_modified]"
+
+    # Step 5: Test the fix
+    - agent:
+        prompt: |
+          Verify the fix works.
+
+          1. Build: Run relevant build commands. Fix errors until build succeeds.
+          2. Test: Run tests covering changed code. Fix failures until tests pass.
+          3. Execute: Run any changed scripts/executables to confirm behavior.
+          4. Report: Summarize what was executed and the results.
+
+          Report: "Build: [pass/fail], Tests: [pass/fail/skipped], Vulnerability resolved: [yes/no]"
+
+    # Step 6: Create PR
+    - pullRequest:
+        branch: fix/{{advisory_id}}
+        title: "fix: remediate security vulnerability"
+        description: Automated security fix from Demo Pipeline.
+        draft: false
+
+    # Step 7: Report metrics
+    - report:
+        outputs:
+          - key: advisory_id
+            title: Advisory Fixed
+            string: {}
+            prompt: Return ONLY the CVE/GHSA ID, or "none"
+          - key: severity
+            title: Severity
+            string: {}
+            prompt: Return ONLY CRITICAL, HIGH, or "n/a"
+          - key: fix_type
+            title: Fix Type
+            string: {}
+            prompt: Return ONLY dependency_upgrade, code_change, or "n/a"
+          - key: ghsa_ids
+            title: GHSA Issues Found
+            string: {}
+            prompt: Return ONLY comma-separated GHSA IDs from Trivy results, or "none"
+          - key: critical_ids
+            title: Critical Severity IDs
+            string: {}
+            prompt: Return ONLY comma-separated CVE/GHSA IDs with CRITICAL severity from Trivy results, or "none"
+          - key: high_ids
+            title: High Severity IDs
+            string: {}
+            prompt: Return ONLY comma-separated CVE/GHSA IDs with HIGH severity from Trivy results, or "none"
