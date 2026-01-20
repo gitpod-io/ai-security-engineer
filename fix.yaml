@@ -54,6 +54,15 @@ action:
           - Stage changes with git add
           - Report: "Implemented: [description]"
 
+    - agent:
+        prompt: |
+          Verify the fix works.
+
+          1. Build: Run relevant build commands. Fix errors until build succeeds.
+          2. Test: Run tests covering changed code. Fix failures until tests pass.
+          3. Execute: Run any changed scripts/executables to confirm behavior.
+          4. Report: Summarize what was executed and the results.
+
     - pullRequest:
         branch: jonas/{{linear_issue_id}}-fix
         description: Automated security fix by Ona Agent.
