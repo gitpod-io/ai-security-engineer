@@ -1,4 +1,4 @@
-# Jonas, your Ona AI Security Engineer
+# Your Ona AI Security Engineer
 
 Jonas is a 100% autonomous AI engineer who monitors for CVEs and other vulnerabilities and drives fixes.
 
