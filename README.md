@@ -1,6 +1,6 @@
 # Your Ona AI Security Engineer
 
-Jonas is a 100% autonomous AI engineer who monitors for CVEs and other vulnerabilities and drives fixes.
+A 100% autonomous AI engineer who monitors for CVEs and other vulnerabilities and drives fixes.
 
 ## Data Flow
 
@@ -19,7 +19,7 @@ flowchart TD
         end
     end
 
-    subgraph feed["[Jonas] Fetch Vulnerability Feeds"]
+    subgraph feed["Fetch Vulnerability Feeds"]
         FILTER["Filter: HIGH/CRITICAL<br/>Stack: Go, TS, JS, Kotlin, Java, Python"]
         SCANNER_CHECK["Skip if already<br/>in Trivy/OSV"]
         FILTER --> SCANNER_CHECK
@@ -29,7 +29,7 @@ flowchart TD
         ADV["[Advisory] ID: description<br/>Label: advisory<br/>(early warning only)"]
     end
 
-    subgraph scan["[Jonas] Scan Repository"]
+    subgraph scan["Scan Repository"]
         TRIVY["Trivy Scanner"]
         OSV_SCAN["OSV Scanner"]
         ADV_CHECK["Advisory Matcher"]
@@ -40,14 +40,14 @@ flowchart TD
         FIND["[Finding] ID - repo<br/>Label: finding"]
     end
 
-    subgraph fix["[Jonas] Fix Security Issue"]
+    subgraph fix["Fix Security Issue"]
         SELECT["Select Finding"]
         CHECK["Check if Fixed"]
         IMPLEMENT["Implement Fix"]
         PR["Create Pull Request"]
     end
 
-    subgraph drive["[Jonas] Drive PR until merge"]
+    subgraph drive["Drive PR until merge"]
         PR_CHECK["Find assigned PRs"]
         BUILD["Fix build failures"]
         FEEDBACK["Address review feedback"]
