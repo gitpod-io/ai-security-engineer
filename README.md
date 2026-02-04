@@ -85,10 +85,10 @@ flowchart TD
 
 | Automation | Trigger | Input | Output |
 |------------|---------|-------|--------|
-| `[Jonas] Fetch Vulnerability Feeds` | Manual/Scheduled | NVD, OSV, GitHub (48h), CISA KEV, AWS, GCP (2 weeks) | Advisory issues for vulns not yet in scanners |
-| `[Jonas] Scan Repository` | Manual | Repository code + Advisories | Finding issues (label: `finding`) |
-| `[Jonas] Fix Security Issue` | Manual | Finding issues | Pull requests |
-| `[Jonas] Drive PR until merge` | Manual | Open PRs assigned to user | Merged PRs |
+| `Fetch Vulnerability Feeds` | Manual/Scheduled | NVD, OSV, GitHub (48h), CISA KEV, AWS, GCP (2 weeks) | Advisory issues for vulns not yet in scanners |
+| `Scan Repository` | Manual | Repository code + Advisories | Finding issues (label: `finding`) |
+| `Fix Security Issue` | Manual | Finding issues | Pull requests |
+| `Drive PR until merge` | Manual | Open PRs assigned to user | Merged PRs |
 
 ## Vulnerability Sources
 
