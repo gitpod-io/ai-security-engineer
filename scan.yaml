@@ -1,4 +1,4 @@
-name: "[Jonas] Scan Repository"
+name: "[SecurityEngineer] Scan Repository"
 description: Runs security scanners (Trivy, OSV-Scanner) to find vulnerabilities in Go, Java/Kotlin, JS/TS, and Python codebases, then creates or updates Linear issues for high-priority findings
 
 triggers:

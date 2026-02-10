@@ -1,4 +1,4 @@
-name: "[Jonas] Fix Security Issue"
+name: "[SecurityEngineer] Fix Security Issue"
 description: Fixes a vulnerability finding from Linear for the current repository
 triggers:
   - manual: {}

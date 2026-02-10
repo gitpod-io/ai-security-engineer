@@ -1,4 +1,4 @@
-name: "[Jonas][Demo] Security Fix Pipeline"
+name: "[SecurityEngineer][Demo] Security Fix Pipeline"
 description: Fetches CISA KEV feed, scans with Trivy, fixes the highest priority vulnerability, and submits a PR
 
 triggers:

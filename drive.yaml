@@ -1,4 +1,4 @@
-name: "[Jonas] Drive Pull Request until merge"
+name: "[SecurityEngineer] Drive Pull Request until merge"
 description: Monitors open PRs assigned to me, fixes build failures, responds to reviewer feedback, and enables auto-merge when ready
 
 triggers:

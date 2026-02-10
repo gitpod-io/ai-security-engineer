@@ -1,4 +1,4 @@
-name: "[Jonas] Fetch Vulnerability Feeds"
+name: "[SecurityEngineer] Fetch Vulnerability Feeds"
 description: Monitors public CVE feeds for vulnerabilities affecting our tech stack (Go, TypeScript, JavaScript, Kotlin, Java, Ubuntu, Debian, AWS, GCP) and creates Linear issues for awareness
 
 triggers:
